@@ -644,7 +644,7 @@ static bool capture_on_legacy_interface(struct dumpopt *cfg)
 			char hline[SNPRINTH_MIN_BUFFER_SIZE];
 
 			if (cfg->hex_dump) {
-				printf("%lu.%06lu: packet size %u bytes, "
+				printf("%lld.%06lld: packet size %u bytes, "
 				       "captured %u bytes on if_name \"%s\"\n",
 				       h.ts.tv_sec, h.ts.tv_usec,
 				       h.len, h.caplen, cfg->iface.ifname);
@@ -655,7 +655,7 @@ static bool capture_on_legacy_interface(struct dumpopt *cfg)
 					printf("  %s\n", hline);
 				}
 			} else {
-				printf("%lu.%06lu: packet size %u bytes on "
+				printf("%lld.%06lld: packet size %u bytes on "
 				       "if_name \"%s\"\n",
 				       h.ts.tv_sec, h.ts.tv_usec,
 				       h.len, cfg->iface.ifname);
@@ -1517,7 +1517,6 @@ static void detach_traces(struct capture_programs *progs)
 static bool load_xdp_trace_program(struct dumpopt *cfg,
 				   struct capture_programs *progs)
 {
-	DECLARE_LIBXDP_OPTS(xdp_program_opts, opts, 0);
 	int                         fd, rc;
 	char                        errmsg[STRERR_BUFSIZE];
 	struct xdp_program         *prog;
@@ -1531,10 +1530,7 @@ static bool load_xdp_trace_program(struct dumpopt *cfg,
 	silence_libbpf_logging();
 	silence_libxdp_logging();
 
-	opts.find_filename = "xdpdump_xdp.o";
-	opts.prog_name = "xdpdump";
-
-	prog = xdp_program__create(&opts);
+	prog = xdp_program__find_file("xdpdump_xdp.o", "xdpdump_xdp", NULL);
 	if (libxdp_get_error(prog)) {
 		int err = libxdp_get_error(prog);
 

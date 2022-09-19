@@ -3,62 +3,80 @@
 /*****************************************************************************
  * Include files
  *****************************************************************************/
-#include <stdbool.h>
 #include <linux/bpf.h>
+#include <stdbool.h>
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_trace_helpers.h>
-#include "xdpdump.h"
+#include <linux/if_ether.h>
+#include "xdpmon.h"
 
 /*****************************************************************************
  * Macros
  *****************************************************************************/
-#define min(x, y) ((x) < (y) ? x : y)
-
+//#define min(x, y) ((x) < (y) ? x : y)
+#define PROTO_MAX 8
+#define IP_ADDR_MAX 8
+#define PORT_MAX 65535
 
 /*****************************************************************************
  * Local definitions and global variables
  *****************************************************************************/
+struct ip_pair {
+	__u8 src_addr[4];
+	__u8 dst_addr[4];
+};
+
+
+struct datarec {
+	__u32 rx_packtes;
+	__u32 rx_bytes;
+};
+
 struct {
-	__uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
-	__uint(max_entries, MAX_CPUS);
-	__type(key, int);
-	__type(value, __u32);
-} xdpdump_perf_map SEC(".maps");
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(max_entries, PROTO_MAX);
+	__type(key, __u32);
+	__type(value, sizeof(struct datarec));
+	//__type(value, sizeof(int));
+} xdpmon_proto_map SEC(".maps");
 
-
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(max_entries, IP_ADDR_MAX);
+	__type(key, __u32);
+	__type(value, sizeof(struct datarec));
+	//__type(value, sizeof(int));
+} xdpmon_ip_addr_map SEC(".maps");
 /*****************************************************************************
  * .data section value storing the capture configuration
  *****************************************************************************/
 struct trace_configuration trace_cfg SEC(".data");
-
-
 /*****************************************************************************
  * XDP trace program
  *****************************************************************************/
-SEC("xdpdump_xdp")
-int xdpdump(struct xdp_md *xdp)
-{
+SEC("xdpmon_sec")
+int xdpmon_prog(struct xdp_md *xdp)
+{	
+
 	void *data_end = (void *)(long)xdp->data_end;
 	void *data = (void *)(long)xdp->data;
-	struct pkt_trace_metadata metadata;
+	struct datarec *rec;
+	//struct ethhdr *hdr = data;
+	int key = 0;
 
-	if (data >= data_end ||
-	    trace_cfg.capture_if_ifindex != xdp->ingress_ifindex)
+	if (data >= data_end)
 		return XDP_PASS;
 
-	metadata.prog_index = trace_cfg.capture_prog_index;
-	metadata.ifindex = xdp->ingress_ifindex;
-	metadata.rx_queue = xdp->rx_queue_index;
-	metadata.pkt_len = (__u16)(data_end - data);
-	metadata.cap_len = min(metadata.pkt_len, trace_cfg.capture_snaplen);
-	metadata.action = 0;
-	metadata.flags = 0;
 
-	bpf_perf_event_output(xdp, &xdpdump_perf_map,
-			      ((__u64) metadata.cap_len << 32) |
-			      BPF_F_CURRENT_CPU,
-			      &metadata, sizeof(metadata));
+	rec = bpf_map_lookup_elem(&xdpmon_proto_map, &key);
 
+	if (!rec)
+		return XDP_ABORTED;
+
+	__u32 bytes = data_end - data;
+	rec->rx_bytes += bytes;
+	rec->rx_packtes += 1;
+	
 	return XDP_PASS;
 }
 
